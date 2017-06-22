@@ -34,7 +34,7 @@ end of process:
 
 struct TBLD_PLAYER
 {
-	static const std::string table_name="tbld_player"
+	static const std::string table_name="tbld_player";
 	enum
 	{
 		ID,NAME,JOB,LEV,EXP
@@ -51,7 +51,7 @@ struct TBLD_PLAYER
 		
 struct TBLD_ITEM
 {
-	static const std::string table_name="tbld_item"
+	static const std::string table_name="tbld_item";
 	enum
 	{
 		ID,OWNER_ID,ITEMTYPE,PACKAGE_TYPE,PACKAGE_IDX
