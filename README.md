@@ -1,5 +1,5 @@
 # ddl2cpp
-convert ddl to cppstruct
+convert ddl to cppstruct, need use gcc4.9+
 
 
 ddl export from mysql:
