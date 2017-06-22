@@ -1,0 +1,199 @@
+
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <regex>
+
+//////////////////////////////////////////////////////////////////////
+std::string ReplaceStr(std::string& strSource, const std::string& strRepl, const std::string& strNew)
+{
+	std::string::size_type pos = 0;
+	while ((pos = strSource.find(strRepl, pos)) != std::string::npos)
+	{
+		strSource.replace(pos, strRepl.length(), strNew);
+		pos += strNew.length();
+	}
+	return strSource;
+}
+
+inline std::vector<std::string> split_string(const std::string & str, const std::string & delimiters)
+{
+	std::vector<std::string> v;
+	std::string::size_type start = 0;
+	auto pos = str.find_first_of(delimiters, start);
+	while (pos != std::string::npos)
+	{
+		if (pos != start) // ignore empty tokens
+			v.emplace_back(str, start, pos - start);
+		start = pos + 1;
+		pos = str.find_first_of(delimiters, start);
+	}
+	if (start < str.length()) // ignore trailing delimiter
+		v.emplace_back(str, start, str.length() - start); // add what's left of the string
+	return v;
+}
+
+
+int main()
+{
+	
+	std::ifstream input_file("gamedb.sql");
+	if (input_file.is_open() == false)
+	{
+		std::cout << "gamedb.sql open fail" << std::endl;
+		return false;
+	}
+	std::string input_string((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
+	ReplaceStr(input_string, "\n", "");
+	
+	//将输入按;进行分割
+	std::string output;
+	auto vecString = split_string(input_string, ";");
+	for (auto& v : vecString)
+	{
+		std::cout << "string1:" << v << std::endl;
+		
+		std::string reg_str = R"(CREATE TABLE `(.*)` \( (.*)\) ENGINE=MyISAM (.*))";
+		std::regex base_regex(reg_str);
+		std::smatch base_match;
+		
+
+		
+		if (std::regex_search(v, base_match, base_regex))
+		{
+			std::string table_name = base_match[1];
+			
+			//printf("table_name:%s\n", table_name.c_str());
+			std::string fields_str = base_match[2];
+			using field_type_t = std::pair<std::string, std::string>;
+			std::vector< field_type_t > vecFieldType;
+
+			std::smatch field_match;
+			auto vecFields = split_string(fields_str, ",");
+			for (auto& vFieldStr : vecFields)
+			{
+				//printf("field_context:%s\n", vFieldStr.c_str());
+				if (std::regex_search(vFieldStr, field_match, std::regex{ R"(.*`(.*)` (.*) NOT .*)" }) == true)
+				{
+					std::string field_name = field_match[1];
+					std::string field_type = field_match[2];
+					
+					vecFieldType.push_back({ field_name,field_type });
+				}
+				else if (std::regex_search(vFieldStr, field_match, std::regex{ R"(.*PRIMARY KEY \(`(.*)`\))" }) == true)
+				{
+					std::string field_name = field_match[1];
+					//printf("field_name:%s\n", field_name.c_str());
+				}
+
+			}
+
+
+			std::string fields_name;
+			std::string fields_name_UP;
+			std::string fields_type;
+			for (const auto& v : vecFieldType)
+			{
+				if (fields_name.empty() == false)
+					fields_name += ",";
+				if (fields_name_UP.empty() == false)
+					fields_name_UP += ",";
+
+				fields_name += "\"" + v.first + "\"";
+
+				std::string str_UP = v.first;
+				std::transform(str_UP.begin(), str_UP.end(), str_UP.begin(), ::toupper);
+				fields_name_UP += str_UP;
+
+				std::smatch field_match;
+				if (std::regex_search(v.second, field_match, std::regex{ R"((.*)\((.*)\)(.*))" }) )
+				{
+					std::string field_type = field_match[1];
+					std::string field_bits = field_match[2];
+					bool bUnsigned = field_match.size() > 2 && field_match[3] == " unsigned";
+					std::string field_type_cpp;
+					if (field_type == "bigint")
+					{
+						if (bUnsigned)
+							field_type_cpp = "uint64_t ";
+						else
+							field_type_cpp = "int64_t ";
+					}
+					else if (field_type == "int")
+					{
+						if (bUnsigned)
+							field_type_cpp = "uint32_t ";
+						else
+							field_type_cpp = "int32_t ";
+					}
+					else if (field_type == "smallint")
+					{
+						if (bUnsigned)
+							field_type_cpp = "uint16_t ";
+						else
+							field_type_cpp = "int16_t ";
+					}
+					else if (field_type == "tinyint")
+					{
+						if (bUnsigned)
+							field_type_cpp = "uint8_t ";
+						else
+							field_type_cpp = "int8_t ";
+					}
+					else if (field_type == "float")
+					{
+						if (bUnsigned)
+							field_type_cpp = "float ";
+						else
+							field_type_cpp = "float ";
+					}
+					else if (field_type == "varchar")
+					{
+						field_type_cpp = "char[" + field_bits + "] ";
+					}
+
+
+					field_type_cpp += v.first + ";\n\t";
+
+					fields_type += field_type_cpp;
+				}
+
+
+			}
+
+
+
+			std::string output_format = R"(
+struct %s
+{
+	static const std::string table_name="%s";
+	enum
+	{
+		%s
+	};
+	static const std::string field_name[] = {%s};
+	%s
+};
+
+		)";
+			
+			char szBuf[4096] = {};
+			std::string table_name_UP = table_name;
+			std::transform(table_name_UP.begin(), table_name_UP.end(), table_name_UP.begin(), ::toupper);
+			sprintf(szBuf, output_format.c_str(), table_name_UP.c_str(), table_name.c_str(), fields_name_UP.c_str(),
+				fields_name.c_str(), fields_type.c_str());
+			
+			output += szBuf;
+			printf("%s", szBuf);
+		}
+		
+		
+		
+	}
+	
+
+	std::ofstream output_file("gamedb.h");
+	output_file << "#pragma once\n";
+	output_file << output;
+	output_file.close();
+}
